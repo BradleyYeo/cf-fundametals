@@ -12,15 +12,6 @@
 
 Cloudflare's Developer Platform provides serverless compute, storage, messaging, and AI capabilities executed globally across Cloudflare's Anycast network edge (200+ cities).
 
-# Core Mental Model: V8 Isolates vs. Container Virtualization
-
-- **V8 Isolate Architecture:** Unlike traditional cloud providers (e.g. AWS Lambda or ECS) that spawn Docker containers or MicroVMs (Firecracker), Cloudflare Workers run on Google's V8 JavaScript/WebAssembly engine using **V8 Isolates**.
-- **Nanosecond Cold Starts:** Hundreds of customer Workers run securely within a single V8 process. Security boundaries are enforced by V8 memory isolation rather than OS-level process boundaries, eliminating container cold starts ($<1\text{ ms}$ vs. $200\text{--}1000\text{ ms}$).
-- **Global Anycast Execution:** Incoming requests automatically hit the closest Cloudflare edge data center to the client. Compute and storage resources run at the network edge rather than inside a fixed central AWS/Azure region.
-- **Resource Bindings:** Cloudflare services (D1, R2, KV, Queues, Workers AI, Durable Objects) are exposed directly on the worker's `env` environment context object. Workers communicate with these services over high-speed intra-process memory pointers without needing network API tokens or external credentials.
-
----
-
 # Architecture Diagram & Full-Stack CRUD Workload Flow
 
 The following architecture demonstrates a full-stack **AI-Powered Knowledge Base & Document Management CRUD API** built using all 8 Cloudflare developer services:

@@ -136,8 +136,7 @@ export default function Home() {
           <SocialLinks />
         </div>
         <p className="text-xs text-muted">
-          © {new Date().getFullYear()} Bradley Yeo. Built with Next.js &
-          Tailwind CSS.
+          © {new Date().getFullYear()} Bradley Yeo. Built with Next.js on Cloudflare.
         </p>
       </footer>
     </main>

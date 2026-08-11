@@ -6,18 +6,17 @@ terraform {
       version = "~> 5.23.0"
     }
   }
-}
 
-provider "cloudflare" {
-  api_token = var.cloudflare_api_token
-}
+  backend "s3" {
+    bucket   = "<YOUR_R2_BUCKET_NAME>"
+    key      = "terraform.tfstate"
+    endpoint = "https://<YOUR_ACCOUNT_ID>.r2.cloudflarestorage.com"
+    region   = "auto"
 
-variable "account_id" {
-  type        = string
-  description = "Cloudflare Account ID"
-}
-variable "cloudflare_api_token" {
-  type        = string
-  description = "Cloudflare API Token with Workers, KV, and AI permissions."
-  sensitive   = true
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+  }
 }

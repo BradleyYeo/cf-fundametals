@@ -4,6 +4,7 @@ import { useLanguage } from "@/context/LanguageContext";
 import { resumeData } from "@/data/resume";
 import { SocialLinks } from "@/components/SocialLinks";
 import { EmailProtection } from "@/components/EmailProtection";
+import { ViewCounter } from "@/components/ViewCounter";
 
 export default function Home() {
   const { language } = useLanguage();
@@ -138,6 +139,7 @@ export default function Home() {
         <p className="text-xs text-muted">
           © {new Date().getFullYear()} Bradley Yeo. Built with Next.js on Cloudflare.
         </p>
+        <ViewCounter />
       </footer>
     </main>
   );

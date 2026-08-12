@@ -4,20 +4,18 @@ resource "cloudflare_workers_kv_namespace" "vinext_kv_cache" {
   title      = "VINEXT_KV_CACHE"
 }
 
-# Portfolio Worker (free tier — 100k req/day, no charge)
-resource "cloudflare_workers_script" "portfolio" {
-  account_id  = var.account_id
-  script_name = "portfolio"
-  content     = file("../portfolio/dist/server/index.js")
+# D1 database for persistent page view counters (free tier — 5GB, 5M rows/day)
+resource "cloudflare_d1_database" "portfolio_views" {
+  account_id            = var.account_id
+  name                  = "portfolio-views"
+  primary_location_hint = "apac"
 
-  bindings = [{
-    name         = "VINEXT_KV_CACHE"
-    namespace_id = cloudflare_workers_kv_namespace.vinext_kv_cache.id
-    type         = "kv_namespace"
-  }]
+  read_replication = {
+    mode = "disabled"
+  }
 }
 
-# Patch wrangler.jsonc with the real KV namespace ID so `vinext dev` works locally
+# Patch wrangler.jsonc with the real KV namespace ID and D1 database ID
 resource "local_file" "wrangler_jsonc" {
   content = jsonencode({
     "$schema"           = "node_modules/wrangler/config-schema.json"
@@ -37,17 +35,15 @@ resource "local_file" "wrangler_jsonc" {
         id      = cloudflare_workers_kv_namespace.vinext_kv_cache.id
       }
     ]
+    d1_databases = [
+      {
+        binding       = "VIEWS_DB"
+        database_name = cloudflare_d1_database.portfolio_views.name
+        database_id   = cloudflare_d1_database.portfolio_views.id
+      }
+    ]
   })
   filename = "${path.module}/../portfolio/wrangler.jsonc"
 }
 
-# Outputs for reference
-output "kv_namespace_id" {
-  description = "VINEXT_KV_CACHE namespace ID"
-  value       = cloudflare_workers_kv_namespace.vinext_kv_cache.id
-}
 
-output "worker_name" {
-  description = "Deployed Worker name"
-  value       = cloudflare_workers_script.portfolio.script_name
-}

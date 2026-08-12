@@ -1,86 +1,368 @@
-# Portfolio Architecture & Technical Documentation
+# Portfolio — Codebase Reading Guide
 
-A full-stack, bilingual personal portfolio application built with **Next.js (App Router)** and **Vinext** (Vite-powered Next.js API-compatible framework for Cloudflare Workers), styled with Tailwind CSS v4 using a custom Cloudflare Orange design system.
+A bilingual personal portfolio built with **Next.js App Router** running on **Cloudflare Workers** via Vinext. This guide teaches you to read the codebase as a TypeScript beginner.
 
 ---
 
-# Codebase Architecture
+# TypeScript Basics You'll Need
 
-```
-portfolio/
-├── src/
-│   ├── app/
-│   │   ├── globals.css         # Tailwind v4 design system with CSS custom properties & animations
-│   │   ├── layout.tsx          # Root layout with ThemeProvider, LanguageProvider & Navbar
-│   │   ├── page.tsx            # Main portfolio page (Hero, Skills, Experience, Certs, Education)
-│   │   └── robots.ts           # Dynamic SEO robots.txt metadata route
-│   ├── components/
-│   │   ├── EmailProtection.tsx # Cloudflare Turnstile human verification component
-│   │   ├── LanguageToggle.tsx  # English / Chinese (EN/中) language switcher
-│   │   ├── Navbar.tsx          # Sticky glassmorphism header navigation bar
-│   │   ├── SocialLinks.tsx     # GitHub, LinkedIn, and Substack link buttons
-│   │   └── ThemeToggle.tsx     # Dark / Light mode toggle button
-│   ├── context/
-│   │   ├── LanguageContext.tsx # React Context for global language state (en | zh)
-│   │   └── ThemeContext.tsx    # React Context for global theme state with localStorage persistence
-│   └── data/
-│       └── resume.ts           # Strongly typed bilingual content dictionary (English & Chinese)
-├── public/
-│   └── robots.txt              # Static crawler permissions fallback
-├── vite.config.ts              # Vinext / Vite compiler configuration for RSC & Cloudflare Workers
-├── wrangler.jsonc              # Cloudflare Workers deployment manifest (KV binding & assets config)
-└── package.json                # Project dependencies and script definitions
+Before reading any file, understand these three patterns that appear everywhere:
+
+## `interface` — Describing the shape of data
+
+```typescript
+// Describes what a ViewCounts object must look like
+interface ViewCounts {
+  human: number;  // must have a "human" field of type number
+  agent: number;  // must have an "agent" field of type number
+}
+
+// Usage: TypeScript now knows what fields this object has
+const counts: ViewCounts = { human: 5, agent: 2 };
+counts.human   // ✅ TypeScript knows this is a number
+counts.foo     // ❌ TypeScript error: 'foo' doesn't exist
 ```
 
----
+## `type` — Defining a union of allowed values
 
-# Cloudflare-Specific Code & Integrations
+```typescript
+// Language can only ever be "en" or "zh", never anything else
+type Language = "en" | "zh";
 
-## 1. Cloudflare Turnstile Bot Protection (`EmailProtection.tsx`)
-- **File**: [EmailProtection.tsx](file:///Users/bradleyyeo/Documents/learn/cf-fundametals/portfolio/src/components/EmailProtection.tsx)
-- **Functionality**: Protects user email address from automated web scrapers.
-- **Implementation**:
-  - Dynamically injects Cloudflare's Turnstile script (`https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit`).
-  - Displays a **"Verify with Cloudflare Turnstile to View Email"** challenge widget.
-  - Unlocks and reveals the clickable `mailto:` link only after the `onSuccess` callback completes.
-  - Defaults to Cloudflare's official testing sitekey (`1x00000000000000000000AA`) or reads `NEXT_PUBLIC_TURNSTILE_SITE_KEY`.
+// Theme can only be "light" or "dark"
+type Theme = "light" | "dark";
+```
 
-## 2. Vinext Framework for Cloudflare Workers (`vite.config.ts`)
-- **File**: `vite.config.ts`
-- **Functionality**: Enables React Server Components (RSC) and Next.js App Router compilation target for Cloudflare Workers instead of traditional Node.js servers.
-- **Outputs**:
-  - `dist/server/` — JavaScript bundle compiled for V8 Isolates execution.
-  - `dist/client/` — Static assets served via Cloudflare Assets.
+## `as` — Type casting (telling TypeScript "trust me, this is X")
 
-## 3. Cloudflare Workers KV Cache Binding (`wrangler.jsonc`)
-- **File**: [wrangler.jsonc](file:///Users/bradleyyeo/Documents/learn/cf-fundametals/portfolio/wrangler.jsonc)
-- **Functionality**: Binds the Cloudflare Workers KV namespace (`VINEXT_KV_CACHE`) to the execution environment.
-- **Usage**:
-  - Vinext uses the KV store for low-latency ($<15\text{ ms}$) server-side data caching.
-  - Auto-patched with the live KV namespace ID via Terraform (`terraform/portfolio.tf`).
-
-## 4. Design Accent Color (Cloudflare Orange)
-- **File**: [globals.css](file:///Users/bradleyyeo/Documents/learn/cf-fundametals/portfolio/src/app/globals.css)
-- **Functionality**: Incorporates Cloudflare Orange (`#f6821f`) as the primary accent color token (`--color-accent`).
+```typescript
+// env is typed as unknown, but we know VIEWS_DB is a D1Database
+const db = env.VIEWS_DB as D1Database;
+```
 
 ---
 
-# Key Component Details
+# How to Read the Codebase
 
-## 1. State Management (`LanguageContext` & `ThemeContext`)
-- **`ThemeContext`**: Handles dark and light mode switching by updating `data-theme` attribute on `<html>` and persisting settings in `localStorage`.
-- **`LanguageContext`**: Manages current language state (`en` or `zh`), dynamically re-rendering resume content from `resume.ts`.
+## Reading Order
 
-## 2. Bilingual Content Dictionary (`resume.ts`)
-- **File**: [resume.ts](file:///Users/bradleyyeo/Documents/learn/cf-fundametals/portfolio/src/data/resume.ts)
-- Contains complete resumes in both English and Chinese (`en` and `zh`), providing type-safe property access across all UI sections.
+Start here → read in this order:
+
+```
+1. src/data/resume.ts          ← Data (no framework code)
+2. src/context/ThemeContext.tsx ← React state basics
+3. src/context/LanguageContext.tsx
+4. src/app/layout.tsx          ← App entry point
+5. src/app/page.tsx            ← Main page UI
+6. src/components/ViewCounter.tsx ← Client-side behaviour
+7. src/app/api/views/route.ts  ← Server-side + Cloudflare bindings
+```
 
 ---
 
-# Available Development & Build Commands
+# File-by-File Walkthrough
 
-- **`npm run dev:vinext`**: Starts the Vinext / Vite dev server on port `3001` with fast HMR.
-- **`npm run build:vinext`**: Builds production output for Cloudflare Workers (`dist/server` and `dist/client`).
-- **`npm run deploy:vinext`**: Deploys the built worker and static assets to Cloudflare Workers using Wrangler.
-- **`npm run dev`**: Runs standard Next.js dev server on port `3000`.
-- **`npm run build`**: Builds standard Next.js production bundle.
+## `src/data/resume.ts` — Content Dictionary
+
+The simplest file. Just a plain TypeScript object holding all content in both English and Chinese.
+
+```typescript
+export const resumeData = {
+  en: { name: "Bradley Yeo Kian", ... },
+  zh: { name: "杨建", ... },
+};
+
+// "en" | "zh" — this is the Language type used everywhere
+export type Language = keyof typeof resumeData;
+// keyof typeof X means "give me the keys of the object X as a type"
+// Result: Language = "en" | "zh"
+```
+
+**Key concept**: `export` means other files can import this. `const` means it never changes at runtime.
+
+---
+
+## `src/context/ThemeContext.tsx` — Global State (Theme)
+
+React Context lets you share state across the whole app without passing props everywhere.
+
+```typescript
+"use client"; // ← This tells Next.js: run this in the browser, not the server
+
+// Step 1: Create a context (a "box" for shared state)
+const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+//                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+//                              TypeScript generic: what type is inside the box
+
+// Step 2: Provider wraps the whole app and holds the actual state
+export function ThemeProvider({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>("dark");
+  //    ^value  ^setter     ^hook     ^initial value
+
+  useEffect(() => {
+    // Read from localStorage when the component first mounts
+    const stored = localStorage.getItem("theme") as Theme | null;
+    if (stored) setTheme(stored);
+  }, []); // ← empty array = run once on mount
+
+  useEffect(() => {
+    // Whenever theme changes, update the HTML attribute and save it
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [theme]); // ← [theme] = run whenever theme changes
+}
+
+// Step 3: Custom hook — consumer components call this to get the state
+export function useTheme() {
+  const ctx = useContext(ThemeContext);
+  if (!ctx) throw new Error("useTheme must be used within ThemeProvider");
+  return ctx; // Returns { theme, toggleTheme }
+}
+```
+
+**The CSS connection**: When `data-theme="dark"` is set on `<html>`, the CSS in `globals.css` switches all `var(--color-*)` tokens to dark values. No JavaScript needed after that.
+
+---
+
+## `src/app/layout.tsx` — App Shell (Server Component)
+
+This file has **no** `"use client"` directive — it runs on the server (Cloudflare Workers).
+
+```typescript
+// Server Component: no useState, no useEffect, no browser APIs
+export default function RootLayout({ children }: LayoutProps<"/">) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body>
+        <ThemeProvider>       {/* Client component — wraps everything */}
+          <LanguageProvider>  {/* Client component — wraps everything */}
+            <Navbar />
+            <div>{children}</div>  {/* page.tsx renders here */}
+          </LanguageProvider>
+        </ThemeProvider>
+      </body>
+    </html>
+  );
+}
+```
+
+**Key concept**: In Next.js App Router, components without `"use client"` run on the server. Components with `"use client"` run in the browser. A server component can render client components — but NOT the other way around.
+
+---
+
+## `src/app/page.tsx` — Main Page (Client Component)
+
+Because it starts with `"use client"`, this runs in the browser.
+
+```typescript
+"use client";
+
+export default function Home() {
+  const { language } = useLanguage(); // Gets "en" or "zh" from context
+  const r = resumeData[language];     // r = the English or Chinese content object
+
+  return (
+    <main>
+      <h1>{r.name}</h1>  {/* Renders "Bradley Yeo Kian" or Chinese name */}
+      {/* ... */}
+      <ViewCounter />  {/* Renders view count in footer */}
+    </main>
+  );
+}
+```
+
+**Key concept**: `resumeData[language]` is dynamic key access. If `language === "en"`, it returns `resumeData.en`. This is how the whole bilingual system works — one line.
+
+---
+
+## `src/components/ViewCounter.tsx` — Client-Side View Tracking
+
+This is the most complex client component. Read it in three chunks:
+
+### Chunk 1: State setup
+
+```typescript
+const [counts, setCounts] = useState<ViewCounts | null>(null);
+const [loading, setLoading] = useState(true);
+// ViewCounts | null means: either a ViewCounts object, or nothing yet
+```
+
+### Chunk 2: The useEffect (runs once after page loads in browser)
+
+```typescript
+useEffect(() => {
+  const SESSION_KEY = "portfolio_view_tracked";
+
+  async function trackAndFetch() {
+    // sessionStorage persists for the tab lifetime only (cleared on tab close)
+    if (!sessionStorage.getItem(SESSION_KEY)) {
+      // First visit this session → POST to increment
+      const res = await fetch("/api/views", { method: "POST" });
+      if (res.ok) {
+        const data: ViewCounts = await res.json();
+        setCounts(data);
+        sessionStorage.setItem(SESSION_KEY, "1"); // Mark as counted
+        return;
+      }
+    }
+    // Already counted this session → just GET the current count
+    const res = await fetch("/api/views");
+    if (res.ok) setCounts(await res.json());
+  }
+
+  trackAndFetch();
+}, []); // ← [] means run once when component mounts
+```
+
+### Chunk 3: Render
+
+```typescript
+if (loading) return <div>Loading page views...</div>;
+
+// ?. is optional chaining: safe if counts is null
+// ?? is nullish coalescing: fallback to 0 if null/undefined
+const humanCount = counts?.human ?? 0;
+
+return <div>{humanCount} human views · {agentCount} agent views</div>;
+```
+
+---
+
+## `src/app/api/views/route.ts` — Server API + Cloudflare Bindings
+
+This is the most Cloudflare-specific file. It runs entirely on Cloudflare Workers — never in the browser.
+
+### How Cloudflare Bindings Work
+
+A **binding** is a service (database, cache, object storage) that Cloudflare injects directly into your Worker at runtime. You declare them in `wrangler.jsonc`; Cloudflare makes them available via:
+
+```typescript
+import { env } from "cloudflare:workers"; // ← Cloudflare-specific virtual module
+
+// Cast to the correct type (env is typed as "unknown" by default)
+const db = (env as Record<string, unknown>).VIEWS_DB as D1Database;
+const kv = (env as Record<string, unknown>).VINEXT_KV_CACHE as KVNamespace;
+```
+
+`Record<string, unknown>` means "an object with string keys and unknown values" — it's a safe way to access arbitrary properties without TypeScript erroring.
+
+### D1 Database (Persistent storage)
+
+D1 is Cloudflare's serverless SQLite database. The API is a thin wrapper around SQL:
+
+```typescript
+// Prepared statement with ? placeholder — prevents SQL injection
+await db
+  .prepare("INSERT INTO page_views (visitor_type, count) VALUES (?, 1) ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1")
+  .bind(visitorType)  // ← substitutes ? with the actual value
+  .run();
+```
+
+`ON CONFLICT DO UPDATE` is an **upsert** — insert if the row doesn't exist, update if it does.
+
+### KV Cache (Fast read cache)
+
+KV is Cloudflare's key-value store. Reads are <15ms globally. Used here as a 5-minute read cache in front of D1:
+
+```typescript
+// Read from KV (fast)
+const cached = await kv.get("view_counts", "json");
+if (cached) return NextResponse.json(cached); // Cache hit → skip D1
+
+// Cache miss → read from D1, then populate KV
+const counts = await getCountsFromD1(db);
+await kv.put("view_counts", JSON.stringify(counts), {
+  expirationTtl: 300, // TTL in seconds → KV auto-deletes after 5 min
+});
+```
+
+### Bot detection
+
+```typescript
+const BOT_PATTERNS = [/bot/i, /crawler/i, /googlebot/i, ...];
+
+function isBot(userAgent: string): boolean {
+  // .some() returns true if ANY pattern matches
+  return BOT_PATTERNS.some((pattern) => pattern.test(userAgent));
+}
+```
+
+`/bot/i` is a **regex** (regular expression). `/i` means case-insensitive. `.test(string)` returns true if the string matches the pattern.
+
+### HTTP route handlers
+
+Next.js App Router uses filename conventions for API routes. In `app/api/views/route.ts`:
+
+```typescript
+// Named export "GET" → handles HTTP GET requests to /api/views
+export async function GET() { ... }
+
+// Named export "POST" → handles HTTP POST requests to /api/views
+export async function POST(request: NextRequest) { ... }
+```
+
+---
+
+# Cloudflare Services Used in This App
+
+| Service | Binding Name | Used In | Purpose |
+|---|---|---|---|
+| **D1 Database** | `VIEWS_DB` | `route.ts` | Persistent view count storage (SQLite) |
+| **Workers KV** | `VINEXT_KV_CACHE` | `route.ts` + Vinext | Fast read cache for view counts + Next.js ISR |
+| **Assets** | `ASSETS` | Vinext internals | Serves `dist/client/` static files |
+| **Turnstile** | (external script) | `EmailProtection.tsx` | Bot challenge before showing email |
+
+---
+
+# Full Request Flow
+
+```
+Browser opens page
+  ↓
+Cloudflare Workers receives request
+  ↓ (Vinext routes it)
+Server renders layout.tsx + page.tsx HTML → sent to browser
+  ↓
+Browser loads page, React hydrates (attaches event listeners)
+  ↓
+ViewCounter.tsx mounts → useEffect fires
+  ↓ (first visit this session)
+POST /api/views
+  → route.ts checks User-Agent → classifies as "human"
+  → D1: UPSERT human count +1
+  → KV: delete stale cache, write fresh cache
+  → returns { human: N, agent: M }
+  ↓
+ViewCounter.tsx receives response → setCounts() → re-renders with count
+```
+
+---
+
+# Development & Build Commands
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Next.js dev server (port 3000, Node.js) |
+| `npm run dev:vinext` | Vinext dev server (port 3001, simulates Workers) |
+| `npm run build:vinext` | Compiles for Cloudflare Workers → `dist/` |
+| `npx wrangler deploy` | Uploads `dist/` to Cloudflare Workers |
+| `npx wrangler d1 execute portfolio-views --remote --command "SELECT * FROM page_views;"` | Query live D1 database |
+| `npx wrangler kv key get --binding=VINEXT_KV_CACHE "view_counts"` | Inspect KV cache |
+
+---
+
+# Key Mental Models
+
+## Server vs. Client code
+
+- **No `"use client"`** = runs on Cloudflare Workers (server) — can access `env`, D1, KV
+- **`"use client"`** = runs in the browser — can use `useState`, `useEffect`, `localStorage`, `sessionStorage`
+- **Never mix**: A client component cannot import from `cloudflare:workers`
+
+## Why KV in front of D1?
+
+D1 is a SQLite database — reads involve a SQL query and disk I/O. KV is an in-memory key-value store replicated globally — reads are <15ms from anywhere. Putting KV in front of D1 means: most visitors read from KV (fast + cheap), only the first visitor after a write hits D1.
+
+## Why Vinext instead of plain Next.js?
+
+Cloudflare Workers runs JavaScript in **V8 Isolates**, not Node.js. Vinext re-compiles Next.js's server runtime to be compatible with the Workers environment using Vite's build system.

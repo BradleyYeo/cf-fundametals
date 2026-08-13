@@ -1,0 +1,67 @@
+# Bradley Yeo Kian
+
+> AI Infrastructure & DevSecOps Engineer
+
+Infrastructure engineer specialising in large-scale GPU clusters, air-gapped Kubernetes deployments, and cloud security automation. Passionate about building resilient, production-grade systems.
+
+- Email: yeo.bradley@gmail.com
+- Website: https://bradleyyeo.com
+
+## Skills
+
+### Languages
+
+- Python
+- SQL
+- Javascript
+- Bash
+- Go
+- Powershell
+- KQL
+- Git
+- Helm
+- Ansible
+- Java
+
+### Technology
+
+- AWS
+- Azure
+- Terraform
+- Kubernetes
+- Docker
+- HPC
+- MAAS
+- Prometheus
+- Grafana
+- Cloudflare
+- Gitlab
+- Kafka
+- iDRAC
+- Cloud-Init
+
+## Experience
+
+### AI Infra Engineer — NCS, Singapore (Oct 2025 — Present)
+
+- Led a team of 5 engineers to deploy an air-gapped Kubernetes cluster across 576 NVIDIA H200 GPUs for ML model training, automating the full stack with Ansible — Ubuntu provisioning via Terraform MAAS, network configuration, and NVIDIA driver installation, to Prometheus monitoring agents.
+
+### DevSecOps Engineer — Accenture, Singapore (Jan 2024 — Oct 2025)
+
+- Authored GitLab CI/CD pipelines for Terraform deployments and security vulnerability detection to meet compliance requirements
+- Authored Terraform on Azure to migrate infrastructure from GCC1 to GCC2 and from azurerm 3.0 to 4.0
+- Authored Terraform on AWS for EKS, ALB, API Gateway, IAM, RDS, SQS, EC2, S3 and Lambda to meet strict IM8 security requirements
+
+## Certifications
+
+- AWS Solutions Architect Associate
+- AWS Security Specialty
+- Terraform Associate (003)
+- Azure Fundamentals (AZ-900)
+- Google Cloud Skill Boost
+
+## Education
+
+### Singapore Management University
+
+BSc in Information Systems (Smart-City Management) — August 2020 — December 2023

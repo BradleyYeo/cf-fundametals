@@ -19,6 +19,11 @@ export const metadata: Metadata = {
   title: "Bradley Yeo — AI Infra & DevSecOps Engineer",
   description:
     "Portfolio of Bradley Yeo Kian — Infrastructure engineer specialising in large-scale GPU clusters, air-gapped Kubernetes, and cloud security automation.",
+  alternates: {
+    types: {
+      "text/markdown": "/llms.txt",
+    },
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

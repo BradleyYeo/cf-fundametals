@@ -26,5 +26,11 @@
         }
     ],
     "main": "vinext/server/fetch-handler",
-    "name": "portfolio"
+    "name": "portfolio",
+    "routes": [
+        {
+            "pattern": "bradleyyeo.com",
+            "custom_domain": true
+        }
+    ]
 }

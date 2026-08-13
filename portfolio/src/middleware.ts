@@ -92,7 +92,12 @@ export default async function middleware(request: NextRequest) {
     }
   }
 
-  // x402 payment middleware for /api/* routes
+  // Bypass payment for the views endpoint
+  if (pathname === "/api/views") {
+    return NextResponse.next();
+  }
+
+  // x402 payment middleware for other /api/* routes
   return x402(request);
 }
 

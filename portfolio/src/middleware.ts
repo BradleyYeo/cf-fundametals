@@ -1,6 +1,8 @@
 import { paymentMiddleware } from "x402-next";
 import { NextRequest, NextResponse, NextFetchEvent } from "next/server";
 import { resumeData } from "@/data/resume";
+// @ts-ignore - The IDE might complain but this works in Cloudflare's runtime
+import { env } from "cloudflare:workers";
 
 /**
  * Middleware combining:
@@ -90,6 +92,9 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   const accept = request.headers.get("accept") ?? "";
   const userAgent = request.headers.get("user-agent") ?? "";
 
+  console.log("Middleware executed for pathname:", pathname);
+  console.log("User Agent:", userAgent, "Accept:", accept);
+
   // 1. Server-side view tracking for agents
   // Agents don't run React/JS, so they won't trigger the client-side ViewCounter.
   if (pathname === "/") {
@@ -97,36 +102,29 @@ export default async function middleware(request: NextRequest, event: NextFetchE
     console.log("Middleware checking agent request:", { isAgentRequest, userAgent, accept });
 
     if (isAgentRequest) {
-      const db = (env as Record<string, unknown>).VIEWS_DB as D1Database | undefined;
-      const kv = (env as Record<string, unknown>).VINEXT_KV_CACHE as KVNamespace | undefined;
-      console.log("Bindings check:", { hasDb: !!db, hasKv: !!kv });
+      const db = ((env as Record<string, any>)?.VIEWS_DB || process.env.VIEWS_DB) as any;
+      const kv = ((env as Record<string, any>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE) as any;
 
       if (db) {
-        event.waitUntil(
-          (async () => {
-            try {
-              console.log("Attempting to insert agent view...");
-              await db.prepare(
-                `CREATE TABLE IF NOT EXISTS page_views (
-                  visitor_type TEXT PRIMARY KEY,
-                  count INTEGER NOT NULL DEFAULT 0
-                )`
-              ).run();
-              await db.prepare(
-                `INSERT INTO page_views (visitor_type, count) VALUES (?, 1)
-                 ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1`
-              ).bind("agent").run();
-              console.log("Successfully inserted agent view!");
-
-              if (kv) {
-                await kv.delete("view_counts");
-                console.log("KV cache invalidated");
-              }
-            } catch (error) {
-              console.error("Failed to track agent view in DB:", error);
-            }
-          })()
-        );
+        try {
+          // Await synchronously for agents to ensure it completes before response
+          await db.prepare(
+            `CREATE TABLE IF NOT EXISTS page_views (
+              visitor_type TEXT PRIMARY KEY,
+              count INTEGER NOT NULL DEFAULT 0
+            )`
+          ).run();
+          await db.prepare(
+            `INSERT INTO page_views (visitor_type, count) VALUES (?, 1)
+             ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1`
+          ).bind("agent").run();
+          
+          if (kv) {
+            await kv.delete("view_counts");
+          }
+        } catch (error) {
+          console.error("Failed to track agent view in DB:", error);
+        }
       }
     }
   }
@@ -136,13 +134,18 @@ export default async function middleware(request: NextRequest, event: NextFetchE
     if (accept.includes("text/markdown")) {
       const markdown = buildMarkdown();
       const tokenEstimate = Math.ceil(markdown.length / 4);
+      
+      const db = ((env as Record<string, any>)?.VIEWS_DB || process.env.VIEWS_DB) as any;
+      const kv = ((env as Record<string, any>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE) as any;
 
       return new NextResponse(markdown, {
         status: 200,
         headers: {
           "Content-Type": "text/markdown; charset=utf-8",
           "x-markdown-tokens": String(tokenEstimate),
-          "Cache-Control": "public, max-age=3600",
+          "Cache-Control": "no-store",
+          "x-debug-has-db": db ? "true" : "false",
+          "x-debug-has-kv": kv ? "true" : "false",
         },
       });
     }

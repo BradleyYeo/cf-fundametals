@@ -25,7 +25,7 @@ export default paymentMiddleware(
     // Protect all /api/* routes
     "/api/*": {
       price: "$0.001",        // 0.1 cents USDC per request
-      network: "base-sepolia", // testnet — change to "base" for mainnet
+      network: "base", // testnet — change to "base" for mainnet
     },
   }
   // No custom facilitator config — defaults to https://x402.org/facilitator

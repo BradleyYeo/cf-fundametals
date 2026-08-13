@@ -29,6 +29,9 @@ const BOT_PATTERNS = [
   /anthropic/i,
   /cohere-ai/i,
   /ia_archiver/i,
+  /isitagentready/i,
+  /cloudflare/i,
+  /agent/i,
 ];
 
 function isBot(userAgent: string): boolean {

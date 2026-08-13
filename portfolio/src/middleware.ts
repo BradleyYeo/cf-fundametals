@@ -1,5 +1,5 @@
 import { paymentMiddleware } from "x402-next";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, NextFetchEvent } from "next/server";
 import { resumeData } from "@/data/resume";
 
 /**
@@ -7,6 +7,7 @@ import { resumeData } from "@/data/resume";
  * 1. Markdown content negotiation — intercepts Accept: text/markdown on page routes
  *    and returns inline markdown (free-tier alternative to CF's Markdown for Agents)
  * 2. x402 payment gating — protects /api/* routes with micropayments
+ * 3. Server-side view tracking for agents (since they don't execute JS)
  */
 
 const x402 = paymentMiddleware(
@@ -18,6 +19,20 @@ const x402 = paymentMiddleware(
     },
   }
 );
+
+// Known bot/crawler User-Agent patterns (copied from views API)
+const BOT_PATTERNS = [
+  /bot/i, /crawler/i, /spider/i, /crawling/i, /gptbot/i, /claudebot/i,
+  /chatgpt/i, /bingbot/i, /googlebot/i, /yandexbot/i, /baiduspider/i,
+  /duckduckbot/i, /slurp/i, /facebookexternalhit/i, /linkedinbot/i,
+  /twitterbot/i, /applebot/i, /semrushbot/i, /ahrefsbot/i, /dotbot/i,
+  /petalbot/i, /bytespider/i, /ccbot/i, /anthropic/i, /cohere-ai/i,
+  /ia_archiver/i, /isitagentready/i, /cloudflare/i
+];
+
+function isBot(userAgent: string): boolean {
+  return BOT_PATTERNS.some((pattern) => pattern.test(userAgent));
+}
 
 /** Build markdown string from resume data */
 function buildMarkdown(): string {
@@ -70,13 +85,29 @@ function buildMarkdown(): string {
   return lines.join("\n");
 }
 
-export default async function middleware(request: NextRequest) {
+export default async function middleware(request: NextRequest, event: NextFetchEvent) {
   const { pathname } = request.nextUrl;
+  const accept = request.headers.get("accept") ?? "";
+  const userAgent = request.headers.get("user-agent") ?? "";
 
-  // Markdown content negotiation for page routes (not /api/*)
-  // When an agent sends Accept: text/markdown, return markdown inline
+  // 1. Server-side view tracking for agents
+  // Agents don't run React/JS, so they won't trigger the client-side ViewCounter.
+  if (pathname === "/") {
+    const isAgentRequest = isBot(userAgent) || accept.includes("text/markdown");
+    if (isAgentRequest) {
+      event.waitUntil(
+        fetch(new URL("/api/views", request.url), {
+          method: "POST",
+          headers: {
+            "user-agent": "agent", // Force agent tracking
+          },
+        }).catch(() => {}) // Silently fail if something goes wrong
+      );
+    }
+  }
+
+  // 2. Markdown content negotiation for page routes (not /api/*)
   if (!pathname.startsWith("/api/")) {
-    const accept = request.headers.get("accept") ?? "";
     if (accept.includes("text/markdown")) {
       const markdown = buildMarkdown();
       const tokenEstimate = Math.ceil(markdown.length / 4);
@@ -97,11 +128,11 @@ export default async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // x402 payment middleware for other /api/* routes
+  // 3. x402 payment middleware for other /api/* routes
   return x402(request);
 }
 
 export const config = {
-  // Run on API routes (for x402) and root page (for markdown negotiation)
+  // Run on API routes (for x402) and root page (for markdown negotiation & agent tracking)
   matcher: ["/api/:path*", "/api", "/"],
 };

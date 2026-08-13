@@ -94,15 +94,40 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   // Agents don't run React/JS, so they won't trigger the client-side ViewCounter.
   if (pathname === "/") {
     const isAgentRequest = isBot(userAgent) || accept.includes("text/markdown");
+    console.log("Middleware checking agent request:", { isAgentRequest, userAgent, accept });
+
     if (isAgentRequest) {
-      event.waitUntil(
-        fetch(new URL("/api/views", request.url), {
-          method: "POST",
-          headers: {
-            "user-agent": "agent", // Force agent tracking
-          },
-        }).catch(() => {}) // Silently fail if something goes wrong
-      );
+      const db = (env as Record<string, unknown>).VIEWS_DB as D1Database | undefined;
+      const kv = (env as Record<string, unknown>).VINEXT_KV_CACHE as KVNamespace | undefined;
+      console.log("Bindings check:", { hasDb: !!db, hasKv: !!kv });
+
+      if (db) {
+        event.waitUntil(
+          (async () => {
+            try {
+              console.log("Attempting to insert agent view...");
+              await db.prepare(
+                `CREATE TABLE IF NOT EXISTS page_views (
+                  visitor_type TEXT PRIMARY KEY,
+                  count INTEGER NOT NULL DEFAULT 0
+                )`
+              ).run();
+              await db.prepare(
+                `INSERT INTO page_views (visitor_type, count) VALUES (?, 1)
+                 ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1`
+              ).bind("agent").run();
+              console.log("Successfully inserted agent view!");
+
+              if (kv) {
+                await kv.delete("view_counts");
+                console.log("KV cache invalidated");
+              }
+            } catch (error) {
+              console.error("Failed to track agent view in DB:", error);
+            }
+          })()
+        );
+      }
     }
   }
 

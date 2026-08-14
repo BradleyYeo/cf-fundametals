@@ -22,69 +22,92 @@ const x402 = paymentMiddleware(
   }
 );
 
-// Known bot/crawler User-Agent patterns (copied from views API)
-const BOT_PATTERNS = [
-  /bot/i, /crawler/i, /spider/i, /crawling/i, /gptbot/i, /claudebot/i,
-  /chatgpt/i, /bingbot/i, /googlebot/i, /yandexbot/i, /baiduspider/i,
-  /duckduckbot/i, /slurp/i, /facebookexternalhit/i, /linkedinbot/i,
-  /twitterbot/i, /applebot/i, /semrushbot/i, /ahrefsbot/i, /dotbot/i,
-  /petalbot/i, /bytespider/i, /ccbot/i, /anthropic/i, /cohere-ai/i,
-  /ia_archiver/i, /isitagentready/i, /cloudflare/i
-];
+// Known bot/crawler User-Agent patterns
+const BOT_REGEX =
+  /bot|crawler|spider|crawling|gptbot|claudebot|chatgpt|bingbot|googlebot|yandexbot|baiduspider|duckduckbot|slurp|facebookexternalhit|linkedinbot|twitterbot|applebot|semrushbot|ahrefsbot|dotbot|petalbot|bytespider|ccbot|anthropic|cohere-ai|ia_archiver|isitagentready|cloudflare|agent/i;
 
 function isBot(userAgent: string): boolean {
-  return BOT_PATTERNS.some((pattern) => pattern.test(userAgent));
+  return BOT_REGEX.test(userAgent);
 }
 
 /** Build markdown string from resume data */
 function buildMarkdown(): string {
   const r = resumeData.en;
-  const lines: string[] = [
-    `# ${r.name}`,
-    "",
-    `> ${r.tagline}`,
-    "",
-    r.about,
-    "",
-    `- Email: ${r.email}`,
-    `- Website: https://bradleyyeo.com`,
-    "",
-    `## ${r.skills.title}`,
-    "",
-    `### ${r.skills.languages.title}`,
-    ...r.skills.languages.items.map((s) => `- ${s}`),
-    "",
-    `### ${r.skills.technology.title}`,
-    ...r.skills.technology.items.map((s) => `- ${s}`),
-    "",
-    `## ${r.experience.title}`,
-    "",
-  ];
 
-  for (const job of r.experience.jobs) {
-    lines.push(`### ${job.role} — ${job.company}, ${job.location} (${job.period})`);
-    lines.push("");
-    for (const b of job.bullets) {
-      lines.push(`- ${b}`);
+  const jobsMarkdown = r.experience.jobs
+    .map(
+      (job) =>
+        `### ${job.role} — ${job.company}, ${job.location} (${job.period})\n\n${job.bullets.map((b) => `- ${b}`).join("\n")}`
+    )
+    .join("\n\n");
+
+  const certsMarkdown = r.certifications.items.map((c) => `- ${c}`).join("\n");
+  const languagesMarkdown = r.skills.languages.items.map((s) => `- ${s}`).join("\n");
+  const techMarkdown = r.skills.technology.items.map((s) => `- ${s}`).join("\n");
+
+  return `# ${r.name}
+
+> ${r.tagline}
+
+${r.about}
+
+- Email: ${r.email}
+- Website: https://bradleyyeo.com
+
+## ${r.skills.title}
+
+### ${r.skills.languages.title}
+${languagesMarkdown}
+
+### ${r.skills.technology.title}
+${techMarkdown}
+
+## ${r.experience.title}
+
+${jobsMarkdown}
+
+## ${r.certifications.title}
+
+${certsMarkdown}
+
+## ${r.education.title}
+
+### ${r.education.school}
+
+${r.education.degree} — ${r.education.period}
+`;
+}
+
+async function trackAgentView(): Promise<void> {
+  const db = ((env as Record<string, any>)?.VIEWS_DB || process.env.VIEWS_DB) as any;
+  const kv = ((env as Record<string, any>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE) as any;
+
+  if (!db) return;
+
+  try {
+    await db
+      .prepare(
+        `CREATE TABLE IF NOT EXISTS page_views (
+          visitor_type TEXT PRIMARY KEY,
+          count INTEGER NOT NULL DEFAULT 0
+        )`
+      )
+      .run();
+
+    await db
+      .prepare(
+        `INSERT INTO page_views (visitor_type, count) VALUES (?, 1)
+         ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1`
+      )
+      .bind("agent")
+      .run();
+
+    if (kv) {
+      await kv.delete("view_counts");
     }
-    lines.push("");
+  } catch (error) {
+    console.error("Failed to track agent view in DB:", error);
   }
-
-  lines.push(`## ${r.certifications.title}`);
-  lines.push("");
-  for (const c of r.certifications.items) {
-    lines.push(`- ${c}`);
-  }
-  lines.push("");
-
-  lines.push(`## ${r.education.title}`);
-  lines.push("");
-  lines.push(`### ${r.education.school}`);
-  lines.push("");
-  lines.push(`${r.education.degree} — ${r.education.period}`);
-  lines.push("");
-
-  return lines.join("\n");
 }
 
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
@@ -92,40 +115,12 @@ export default async function middleware(request: NextRequest, event: NextFetchE
   const accept = request.headers.get("accept") ?? "";
   const userAgent = request.headers.get("user-agent") ?? "";
 
-  console.log("Middleware executed for pathname:", pathname);
-  console.log("User Agent:", userAgent, "Accept:", accept);
-
   // 1. Server-side view tracking for agents
   // Agents don't run React/JS, so they won't trigger the client-side ViewCounter.
   if (pathname === "/") {
     const isAgentRequest = isBot(userAgent) || accept.includes("text/markdown");
-    console.log("Middleware checking agent request:", { isAgentRequest, userAgent, accept });
-
     if (isAgentRequest) {
-      const db = ((env as Record<string, any>)?.VIEWS_DB || process.env.VIEWS_DB) as any;
-      const kv = ((env as Record<string, any>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE) as any;
-
-      if (db) {
-        try {
-          // Await synchronously for agents to ensure it completes before response
-          await db.prepare(
-            `CREATE TABLE IF NOT EXISTS page_views (
-              visitor_type TEXT PRIMARY KEY,
-              count INTEGER NOT NULL DEFAULT 0
-            )`
-          ).run();
-          await db.prepare(
-            `INSERT INTO page_views (visitor_type, count) VALUES (?, 1)
-             ON CONFLICT(visitor_type) DO UPDATE SET count = count + 1`
-          ).bind("agent").run();
-          
-          if (kv) {
-            await kv.delete("view_counts");
-          }
-        } catch (error) {
-          console.error("Failed to track agent view in DB:", error);
-        }
-      }
+      await trackAgentView();
     }
   }
 
@@ -134,9 +129,9 @@ export default async function middleware(request: NextRequest, event: NextFetchE
     if (accept.includes("text/markdown")) {
       const markdown = buildMarkdown();
       const tokenEstimate = Math.ceil(markdown.length / 4);
-      
-      const db = ((env as Record<string, any>)?.VIEWS_DB || process.env.VIEWS_DB) as any;
-      const kv = ((env as Record<string, any>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE) as any;
+
+      const db = ((env as Record<string, unknown>)?.VIEWS_DB || process.env.VIEWS_DB);
+      const kv = ((env as Record<string, unknown>)?.VINEXT_KV_CACHE || process.env.VINEXT_KV_CACHE);
 
       return new NextResponse(markdown, {
         status: 200,

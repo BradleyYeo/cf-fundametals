@@ -40,6 +40,23 @@ type Theme = "light" | "dark";
 const db = env.VIEWS_DB as D1Database;
 ```
 
+## Early Returns (Guard Clauses)
+
+You will often see functions that check for missing dependencies or invalid states and exit immediately:
+
+```typescript
+export async function GET() {
+  // If the database binding isn't available, return a default response immediately
+  if (!db) return NextResponse.json({ human: 0, agent: 0 });
+
+  // Now we know db exists for the rest of the function!
+  // This avoids wrapping the whole function in a giant `if (db) { ... }` block.
+  const counts = await getCountsFromD1(db);
+  // ...
+}
+```
+This pattern flattens the code by removing deep nesting, making it much easier to read.
+
 ---
 
 # How to Read the Codebase
@@ -194,20 +211,22 @@ useEffect(() => {
   const SESSION_KEY = "portfolio_view_tracked";
 
   async function trackAndFetch() {
-    // sessionStorage persists for the tab lifetime only (cleared on tab close)
-    if (!sessionStorage.getItem(SESSION_KEY)) {
-      // First visit this session → POST to increment
-      const res = await fetch("/api/views", { method: "POST" });
+    // Check if user visited in this browser tab session
+    const isFirstVisit = !sessionStorage.getItem(SESSION_KEY);
+    const method = isFirstVisit ? "POST" : "GET";
+
+    try {
+      const res = await fetch("/api/views", { method });
       if (res.ok) {
         const data: ViewCounts = await res.json();
         setCounts(data);
-        sessionStorage.setItem(SESSION_KEY, "1"); // Mark as counted
-        return;
+        if (isFirstVisit) sessionStorage.setItem(SESSION_KEY, "1");
       }
+    } catch {
+      // Silently fail if offline or network drops
+    } finally {
+      setLoading(false);
     }
-    // Already counted this session → just GET the current count
-    const res = await fetch("/api/views");
-    if (res.ok) setCounts(await res.json());
   }
 
   trackAndFetch();
@@ -265,29 +284,35 @@ await db
 KV is Cloudflare's key-value store. Reads are <15ms globally. Used here as a 5-minute read cache in front of D1:
 
 ```typescript
-// Read from KV (fast)
-const cached = await kv.get("view_counts", "json");
-if (cached) return NextResponse.json(cached); // Cache hit → skip D1
+// If KV is available, try to read from it first (fast)
+if (kv) {
+  const cached = await kv.get("view_counts", "json");
+  if (cached) return NextResponse.json(cached); // Cache hit → skip D1
+}
 
-// Cache miss → read from D1, then populate KV
+// Cache miss → read from D1
 const counts = await getCountsFromD1(db);
-await kv.put("view_counts", JSON.stringify(counts), {
-  expirationTtl: 300, // TTL in seconds → KV auto-deletes after 5 min
-});
+
+// Populate KV for the next visitor
+if (kv) {
+  await kv.put("view_counts", JSON.stringify(counts), {
+    expirationTtl: 300, // TTL in seconds → KV auto-deletes after 5 min
+  });
+}
 ```
 
 ### Bot detection
 
 ```typescript
-const BOT_PATTERNS = [/bot/i, /crawler/i, /googlebot/i, ...];
+const BOT_REGEX = /bot|crawler|spider|googlebot|claudebot|.../i;
 
 function isBot(userAgent: string): boolean {
-  // .some() returns true if ANY pattern matches
-  return BOT_PATTERNS.some((pattern) => pattern.test(userAgent));
+  // .test() returns true if the User-Agent matches any bot keyword
+  return BOT_REGEX.test(userAgent);
 }
 ```
 
-`/bot/i` is a **regex** (regular expression). `/i` means case-insensitive. `.test(string)` returns true if the string matches the pattern.
+`/pattern/i` is a **regex** (regular expression). `/i` means case-insensitive. `.test(string)` returns `true` if the string matches the pattern in a single pass.
 
 ### HTTP route handlers
 
@@ -330,7 +355,7 @@ ViewCounter.tsx mounts → useEffect fires
 POST /api/views
   → route.ts checks User-Agent → classifies as "human"
   → D1: UPSERT human count +1
-  → KV: delete stale cache, write fresh cache
+  → KV: write fresh cache (overwriting old cache)
   → returns { human: N, agent: M }
   ↓
 ViewCounter.tsx receives response → setCounts() → re-renders with count

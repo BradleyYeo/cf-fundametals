@@ -7,6 +7,10 @@ interface ViewCounts {
   agent: number;
 }
 
+function formatViews(count: number, label: "human" | "agent"): string {
+  return `${count.toLocaleString()} ${label} view${count === 1 ? "" : "s"}`;
+}
+
 export function ViewCounter() {
   const [counts, setCounts] = useState<ViewCounts | null>(null);
   const [loading, setLoading] = useState(true);
@@ -15,27 +19,15 @@ export function ViewCounter() {
     const SESSION_KEY = "portfolio_view_tracked";
 
     async function trackAndFetch() {
-      // Only POST once per browser session
-      if (!sessionStorage.getItem(SESSION_KEY)) {
-        try {
-          const res = await fetch("/api/views", { method: "POST" });
-          if (res.ok) {
-            const data: ViewCounts = await res.json();
-            setCounts(data);
-            sessionStorage.setItem(SESSION_KEY, "1");
-            setLoading(false);
-            return;
-          }
-        } catch {
-          // Silently fail
-        }
-      }
+      const isFirstVisit = !sessionStorage.getItem(SESSION_KEY);
+      const method = isFirstVisit ? "POST" : "GET";
 
-      // Fetch current counts (cache hit path)
       try {
-        const res = await fetch("/api/views");
+        const res = await fetch("/api/views", { method });
         if (res.ok) {
-          setCounts(await res.json());
+          const data: ViewCounts = await res.json();
+          setCounts(data);
+          if (isFirstVisit) sessionStorage.setItem(SESSION_KEY, "1");
         }
       } catch {
         // Silently fail
@@ -82,7 +74,7 @@ export function ViewCounter() {
               d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
             />
           </svg>
-          {humanCount.toLocaleString()} {humanCount === 1 ? "human view" : "human views"}
+          {formatViews(humanCount, "human")}
         </span>
         <span className="text-border">·</span>
         <span className="inline-flex items-center gap-1.5 font-medium">
@@ -99,7 +91,7 @@ export function ViewCounter() {
               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
             />
           </svg>
-          {agentCount.toLocaleString()} {agentCount === 1 ? "agent view" : "agent views"}
+          {formatViews(agentCount, "agent")}
         </span>
       </div>
     </div>

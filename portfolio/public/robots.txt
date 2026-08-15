@@ -1,6 +1,22 @@
 User-agent: *
+# Allow search engines to index your pages
 Allow: /
+
+# Block AI crawlers from training datasets
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+Sitemap: https://bradleyyeo.com/sitemap.xml
 search=yes
+
 ai-input=yes
 ai-train=no
-Sitemap: https://bradleyyeo.com/sitemap.xml

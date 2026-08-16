@@ -146,8 +146,8 @@ export default async function middleware(request: NextRequest, event: NextFetchE
     }
   }
 
-  // Bypass payment for the views endpoint
-  if (pathname === "/api/views") {
+  // Bypass payment for public endpoints (views & human turnstile verification)
+  if (pathname === "/api/views" || pathname === "/api/verify-turnstile") {
     return NextResponse.next();
   }
 

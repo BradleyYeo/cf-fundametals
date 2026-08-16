@@ -34,9 +34,46 @@ const DEFAULT_SITE_KEY =
 export function EmailProtection({ email }: EmailProtectionProps) {
   const [isVerified, setIsVerified] = useState(false);
   const [showChallenge, setShowChallenge] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [scriptLoaded, setScriptLoaded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+
+  const handleVerifyToken = async (token: string) => {
+    setIsVerifying(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch("/api/verify-turnstile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsVerified(true);
+        setShowChallenge(false);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("human-verified", { detail: data.counts })
+          );
+        }
+      } else {
+        setErrorMessage(data.error || "Turnstile verification failed. Please retry.");
+        if (widgetIdRef.current && window.turnstile) {
+          window.turnstile.reset(widgetIdRef.current);
+        }
+      }
+    } catch {
+      setErrorMessage("Network error during verification. Please retry.");
+      if (widgetIdRef.current && window.turnstile) {
+        window.turnstile.reset(widgetIdRef.current);
+      }
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   useEffect(() => {
     if (showChallenge && scriptLoaded && containerRef.current && window.turnstile) {
@@ -44,9 +81,17 @@ export function EmailProtection({ email }: EmailProtectionProps) {
         try {
           widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: DEFAULT_SITE_KEY,
-            callback: () => {
-              setIsVerified(true);
-              setShowChallenge(false);
+            callback: (token: string) => {
+              handleVerifyToken(token);
+            },
+            "error-callback": () => {
+              setErrorMessage("Turnstile encountered an error. Please reload or retry.");
+            },
+            "expired-callback": () => {
+              setErrorMessage("Turnstile challenge expired. Please verify again.");
+              if (widgetIdRef.current && window.turnstile) {
+                window.turnstile.reset(widgetIdRef.current);
+              }
             },
             theme: "auto",
           });
@@ -107,8 +152,15 @@ export function EmailProtection({ email }: EmailProtectionProps) {
         </button>
       ) : (
         <div className="flex flex-col items-start gap-2">
-          <div className="text-xs text-muted">Verify you are human to unlock email:</div>
+          <div className="text-xs text-muted">
+            {isVerifying ? "Verifying with Cloudflare..." : "Verify you are human to unlock email:"}
+          </div>
           <div ref={containerRef} className="min-h-[65px]" />
+          {errorMessage && (
+            <div className="text-xs text-red-500 font-medium">
+              {errorMessage}
+            </div>
+          )}
         </div>
       )}
     </div>

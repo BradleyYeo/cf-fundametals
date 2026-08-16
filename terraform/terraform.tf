@@ -11,23 +11,24 @@ terraform {
     }
   }
 
-  backend "s3" {
-    bucket   = "portfolio-terraform-state"
-    key      = "terraform/terraform.tfstate"
-    endpoints = { s3 = "https://346e5692ae2024c494ef5f58c36fae37.r2.cloudflarestorage.com"}
-    region   = "apac"
+  # backend "s3" {
+  #   bucket   = "portfolio-terraform-state"
+  #   key      = "terraform/terraform.tfstate"
+  #   endpoints = { s3 = "https://346e5692ae2024c494ef5f58c36fae37.r2.cloudflarestorage.com"}
+  #   region   = "auto"
 
-    skip_credentials_validation = true
-    skip_region_validation      = true
-    skip_requesting_account_id  = true
-    skip_metadata_api_check     = true
-    skip_s3_checksum            = true
-  }
+  #   skip_credentials_validation = true
+  #   skip_region_validation      = true
+  #   skip_requesting_account_id  = true
+  #   skip_metadata_api_check     = true
+  #   skip_s3_checksum            = true
+  #   # use_path_style               = true
+  # }
 }
 
-resource "cloudflare_r2_bucket" "portfolio_tfs" {
-  account_id    = var.account_id
-  name          = "portfolio-terraform-state"
-  location      = "apac"
-  storage_class = "Standard"
-}
+# resource "cloudflare_r2_bucket" "portfolio_tfs" {
+#   account_id    = var.account_id
+#   name          = "portfolio-terraform-state"
+#   location      = "auto"
+#   storage_class = "Standard"
+# }

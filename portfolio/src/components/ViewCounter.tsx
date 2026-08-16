@@ -37,6 +37,22 @@ export function ViewCounter() {
     }
 
     trackAndFetch();
+
+    const handleHumanVerified = (event: Event) => {
+      const customEvent = event as CustomEvent<ViewCounts>;
+      if (customEvent.detail) {
+        setCounts(customEvent.detail);
+      } else {
+        setCounts((prev) =>
+          prev ? { ...prev, human: prev.human + 1 } : { human: 1, agent: 0 }
+        );
+      }
+    };
+
+    window.addEventListener("human-verified", handleHumanVerified);
+    return () => {
+      window.removeEventListener("human-verified", handleHumanVerified);
+    };
   }, []);
 
   if (loading) {

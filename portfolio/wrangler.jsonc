@@ -32,5 +32,12 @@
             "pattern": "bradleyyeo.com",
             "custom_domain": true
         }
+    ],
+    "secrets_store_secrets": [
+        {
+            "binding": "TURNSTILE_SECRET_KEY",
+            "secret_name": "turnstile-secret-key",
+            "store_id": "1cf115b4569f48c088f6780aa2f6a466"
+        }
     ]
 }

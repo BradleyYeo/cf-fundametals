@@ -18,7 +18,17 @@ interface TurnstileVerifyResponse {
   "error-codes"?: string[];
   challenge_ts?: string;
   hostname?: string;
+  action?: string;
+  cdata?: string;
 }
+
+const EXPECTED_ACTION = "view_email";
+const ALLOWED_HOSTNAMES = new Set([
+  "bradleyyeo.com",
+  "www.bradleyyeo.com",
+  "localhost",
+  "127.0.0.1",
+]);
 
 async function ensureTable(db: D1Database): Promise<void> {
   await db
@@ -68,17 +78,34 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as { token?: string };
     const token = body?.token;
 
-    if (!token) {
+    if (typeof token !== "string" || token.length === 0 || token.length > 2048) {
       return NextResponse.json(
-        { success: false, error: "Missing Turnstile verification token" },
+        { success: false, error: "Invalid or missing Turnstile verification token" },
         { status: 400 }
       );
     }
 
-    const secretKey =
-      ((env as Record<string, unknown>).TURNSTILE_SECRET_KEY as string) ||
-      process.env.TURNSTILE_SECRET_KEY ||
-      "1x0000000000000000000000000000000AA"; // Default testing secret key (always passes with testing sitekeys)
+    let secretKey = process.env.TURNSTILE_SECRET_KEY || "";
+    const secretBinding = (env as Record<string, unknown>).TURNSTILE_SECRET_KEY as
+      | { get: () => Promise<string> }
+      | string
+      | undefined;
+
+    if (secretBinding) {
+      if (typeof secretBinding === "string") {
+        secretKey = secretBinding;
+      } else if (typeof secretBinding.get === "function") {
+        try {
+          secretKey = await secretBinding.get();
+        } catch (e) {
+          console.error("Failed to retrieve secret from Secrets Store:", e);
+        }
+      }
+    }
+
+    if (!secretKey) {
+      secretKey = "1x0000000000000000000000000000000AA";
+    }
 
     const ip =
       request.headers.get("cf-connecting-ip") ||
@@ -96,20 +123,44 @@ export async function POST(request: NextRequest) {
       "https://challenges.cloudflare.com/turnstile/v0/siteverify",
       {
         method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: formData,
       }
     );
 
     const outcome = (await verifyRes.json()) as TurnstileVerifyResponse;
+    console.log("Turnstile siteverify response:", JSON.stringify(outcome));
 
     if (!outcome.success) {
+      const errCodes = outcome["error-codes"]?.join(", ") || "verification-failed";
       return NextResponse.json(
         {
           success: false,
-          error: "Turnstile verification failed",
+          error: `Turnstile verification failed (${errCodes})`,
           details: outcome["error-codes"] || [],
         },
-        { status: 400 }
+        { status: 403 }
+      );
+    }
+
+    // Verify action and hostname if returned
+    if (outcome.action && outcome.action !== EXPECTED_ACTION) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Action mismatch (got: "${outcome.action}", expected: "${EXPECTED_ACTION}")`,
+        },
+        { status: 403 }
+      );
+    }
+
+    if (outcome.hostname && !ALLOWED_HOSTNAMES.has(outcome.hostname)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Hostname not allowed ("${outcome.hostname}")`,
+        },
+        { status: 403 }
       );
     }
 

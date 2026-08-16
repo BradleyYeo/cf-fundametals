@@ -10,6 +10,7 @@ declare global {
         container: string | HTMLElement,
         options: {
           sitekey: string;
+          action?: string;
           callback: (token: string) => void;
           "error-callback"?: () => void;
           "expired-callback"?: () => void;
@@ -27,9 +28,9 @@ interface EmailProtectionProps {
   email: string;
 }
 
-// Cloudflare Turnstile testing sitekey (Always passes)
+// Cloudflare Turnstile sitekey
 const DEFAULT_SITE_KEY =
-  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "1x00000000000000000000AA";
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "0x4AAAAAAERd011J3zBuICWo";
 
 export function EmailProtection({ email }: EmailProtectionProps) {
   const [isVerified, setIsVerified] = useState(false);
@@ -81,6 +82,7 @@ export function EmailProtection({ email }: EmailProtectionProps) {
         try {
           widgetIdRef.current = window.turnstile.render(containerRef.current, {
             sitekey: DEFAULT_SITE_KEY,
+            action: "view_email",
             callback: (token: string) => {
               handleVerifyToken(token);
             },

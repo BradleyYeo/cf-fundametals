@@ -66,13 +66,15 @@ This pattern flattens the code by removing deep nesting, making it much easier t
 Start here → read in this order:
 
 ```
-1. src/data/resume.ts          ← Data (no framework code)
-2. src/context/ThemeContext.tsx ← React state basics
+1. src/data/resume.ts                 ← Data (no framework code)
+2. src/context/ThemeContext.tsx        ← React state basics
 3. src/context/LanguageContext.tsx
-4. src/app/layout.tsx          ← App entry point
-5. src/app/page.tsx            ← Main page UI
-6. src/components/ViewCounter.tsx ← Client-side behaviour
-7. src/app/api/views/route.ts  ← Server-side + Cloudflare bindings
+4. src/app/layout.tsx                 ← App entry point
+5. src/app/page.tsx                   ← Main page UI
+6. src/components/ViewCounter.tsx      ← Client-side view tracking
+7. src/components/EmailProtection.tsx  ← Client-side Turnstile challenge
+8. src/app/api/views/route.ts         ← Server-side views + Cloudflare bindings
+9. src/app/api/verify-turnstile/route.ts ← Server-side Turnstile verification + Secrets Store
 ```
 
 ---
@@ -247,6 +249,47 @@ return <div>{humanCount} human views · {agentCount} agent views</div>;
 
 ---
 
+## `src/components/EmailProtection.tsx` — Client-Side Turnstile Challenge
+
+This component protects your contact email address from web crawlers using Cloudflare Turnstile:
+
+### How it works on the client:
+
+```typescript
+// 1. Loads Cloudflare Turnstile script dynamically with explicit rendering
+<Script
+  src="https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"
+  strategy="afterInteractive"
+  onLoad={() => setScriptLoaded(true)}
+/>
+
+// 2. Renders Turnstile widget using public Site Key
+widgetIdRef.current = window.turnstile.render(containerRef.current, {
+  sitekey: "0x4AAAAAAERd011J3zBuICWo",
+  action: "view_email",
+  callback: (token: string) => {
+    handleVerifyToken(token); // Browser sends token to backend
+  },
+  theme: "auto",
+});
+
+// 3. Verifies token via backend & dispatches CustomEvent on success
+const res = await fetch("/api/verify-turnstile", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ token }),
+});
+const data = await res.json();
+if (res.ok && data.success) {
+  setIsVerified(true); // Reveals email address in UI
+  window.dispatchEvent(new CustomEvent("human-verified", { detail: data.counts }));
+}
+```
+
+**Key concept**: `window.dispatchEvent(new CustomEvent("human-verified", ...))` broadcasts an event across the page. `ViewCounter.tsx` listens to this event to increment the human visitor count instantly in the UI without a page reload.
+
+---
+
 ## `src/app/api/views/route.ts` — Server API + Cloudflare Bindings
 
 This is the most Cloudflare-specific file. It runs entirely on Cloudflare Workers — never in the browser.
@@ -328,18 +371,94 @@ export async function POST(request: NextRequest) { ... }
 
 ---
 
-# Cloudflare Services Used in This App
+## `src/app/api/verify-turnstile/route.ts` — Server Turnstile Verification + Secrets Store
 
-| Service | Binding Name | Used In | Purpose |
-|---|---|---|---|
-| **D1 Database** | `VIEWS_DB` | `route.ts` | Persistent view count storage (SQLite) |
-| **Workers KV** | `VINEXT_KV_CACHE` | `route.ts` + Vinext | Fast read cache for view counts + Next.js ISR |
-| **Assets** | `ASSETS` | Vinext internals | Serves `dist/client/` static files |
-| **Turnstile** | (external script) | `EmailProtection.tsx` | Bot challenge before showing email |
+This endpoint receives the client's Turnstile token, verifies it with Cloudflare's `siteverify` API using the private secret key retrieved from **Cloudflare Secrets Store**, and increments the verified human view count in D1.
+
+### Cloudflare Secrets Store Binding (Async Interface)
+
+Cloudflare Secrets Store provides centralized, encrypted secret management. In Workers, Secrets Store bindings are typed as `SecretsStoreSecret`:
+
+```typescript
+interface SecretsStoreSecret {
+  get(): Promise<string>;
+}
+```
+
+Because `.get()` returns a `Promise<string>`, the Worker retrieves the secret asynchronously:
+
+```typescript
+// Extract secret from Secrets Store binding or fallback to process.env
+let secretKey = process.env.TURNSTILE_SECRET_KEY || "";
+const secretBinding = (env as Record<string, unknown>).TURNSTILE_SECRET_KEY as
+  | { get: () => Promise<string> }
+  | string
+  | undefined;
+
+if (secretBinding) {
+  if (typeof secretBinding === "string") {
+    secretKey = secretBinding;
+  } else if (typeof secretBinding.get === "function") {
+    secretKey = await secretBinding.get(); // ← Asynchronous retrieval
+  }
+}
+```
+
+### Cloudflare Siteverify Verification
+
+The Worker posts the client's token and the private secret to Cloudflare's verification endpoint:
+
+```typescript
+const formData = new URLSearchParams();
+formData.append("secret", secretKey);
+formData.append("response", token);
+if (ip) formData.append("remoteip", ip);
+
+const verifyRes = await fetch(
+  "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: formData,
+  }
+);
+
+const outcome = await verifyRes.json();
+// outcome = { success: true/false, "error-codes": [...], action: "view_email", hostname: "bradleyyeo.com" }
+```
+
+When validation succeeds:
+1. Increments `human` count in D1 SQLite database.
+2. Updates KV cache (`view_counts`).
+3. Returns `{ success: true, counts: { human: N, agent: M } }`.
 
 ---
 
-# Full Request Flow
+# Cloudflare Services Used in This App
+
+| Service | Binding / Mechanism | Used In | Purpose |
+|---|---|---|---|
+| **D1 Database** | `VIEWS_DB` | `route.ts`, `verify-turnstile/route.ts` | Persistent view count storage (SQLite) |
+| **Workers KV** | `VINEXT_KV_CACHE` | `route.ts`, `verify-turnstile/route.ts` | Fast read cache for view counts + Next.js ISR |
+| **Secrets Store** | `TURNSTILE_SECRET_KEY` | `verify-turnstile/route.ts` | Centralized encrypted storage for Turnstile private key |
+| **Assets** | `ASSETS` | Vinext internals | Serves `dist/client/` static assets |
+| **Turnstile** | `challenges.cloudflare.com` | `EmailProtection.tsx` | Non-intrusive CAPTCHA challenge before email reveal |
+
+---
+
+# Key Separation: Secrets Store vs. Repository
+
+| Item | Location | Public / Private | Purpose |
+|---|---|---|---|
+| **Site Key** (`0x4AAAAAA...`) | Frontend (`EmailProtection.tsx`) | Public | Rendered on client to display challenge widget |
+| **Wrangler Bindings** | `wrangler.jsonc` | Public | Tells Worker which store/secret name to bind at runtime |
+| **Secret Key** (`0x4AAAAAA...`) | Cloudflare Secrets Store | **Private** | Kept secure on server to authenticate with `siteverify` |
+
+---
+
+# Full Request Flows
+
+## 1. Page Visit & View Tracking Flow
 
 ```
 Browser opens page
@@ -348,17 +467,43 @@ Cloudflare Workers receives request
   ↓ (Vinext routes it)
 Server renders layout.tsx + page.tsx HTML → sent to browser
   ↓
-Browser loads page, React hydrates (attaches event listeners)
+Browser loads page, React hydrates
   ↓
-ViewCounter.tsx mounts → useEffect fires
-  ↓ (first visit this session)
+ViewCounter.tsx mounts → useEffect fires (first visit this session)
+  ↓
 POST /api/views
   → route.ts checks User-Agent → classifies as "human"
   → D1: UPSERT human count +1
-  → KV: write fresh cache (overwriting old cache)
+  → KV: write fresh cache
   → returns { human: N, agent: M }
   ↓
-ViewCounter.tsx receives response → setCounts() → re-renders with count
+ViewCounter.tsx updates UI
+```
+
+## 2. Turnstile Email Unlock & Human Verification Flow
+
+```
+User clicks "Show Email"
+  ↓
+EmailProtection.tsx mounts Turnstile widget (Site Key: 0x4AAAAAAERd011J3zBuICWo)
+  ↓
+User solves / passes Turnstile challenge → receives browser token
+  ↓
+EmailProtection.tsx sends POST /api/verify-turnstile { token }
+  ↓
+Worker retrieves secret via await env.TURNSTILE_SECRET_KEY.get() (Secrets Store)
+  ↓
+Worker calls POST https://challenges.cloudflare.com/turnstile/v0/siteverify
+  ↓
+Turnstile confirms token is valid
+  ↓
+Worker increments D1 "human" count + refreshes KV cache
+  ↓
+Worker returns { success: true, counts: { human: N, agent: M } }
+  ↓
+EmailProtection.tsx displays decoded email & dispatches "human-verified" CustomEvent
+  ↓
+ViewCounter.tsx receives event listener → updates counter in footer instantly!
 ```
 
 ---

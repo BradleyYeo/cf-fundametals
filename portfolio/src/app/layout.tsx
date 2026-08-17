@@ -19,6 +19,13 @@ export const metadata: Metadata = {
   title: "Bradley Yeo — AI Infra & DevSecOps Engineer",
   description:
     "Portfolio of Bradley Yeo Kian — Infrastructure engineer specialising in large-scale GPU clusters, air-gapped Kubernetes, and cloud security automation.",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
   alternates: {
     types: {
       "text/markdown": "/llms.txt",
